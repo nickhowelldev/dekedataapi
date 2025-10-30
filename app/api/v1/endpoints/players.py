@@ -95,28 +95,40 @@ def search_players(
         query = query.join(avg_scores_subquery, Player.id == avg_scores_subquery.c.player_id)
 
         if min_overall:
+            query = query.filter(avg_scores_subquery.c.avg_overall.isnot(None))
             query = query.filter(avg_scores_subquery.c.avg_overall >= min_overall)
         if max_overall:
+            query = query.filter(avg_scores_subquery.c.avg_overall.isnot(None))
             query = query.filter(avg_scores_subquery.c.avg_overall <= max_overall)
         if min_skating:
+            query = query.filter(avg_scores_subquery.c.avg_skating.isnot(None))
             query = query.filter(avg_scores_subquery.c.avg_skating >= min_skating)
         if max_skating:
+            query = query.filter(avg_scores_subquery.c.avg_skating.isnot(None))
             query = query.filter(avg_scores_subquery.c.avg_skating <= max_skating)
         if min_shot:
+            query = query.filter(avg_scores_subquery.c.avg_shot.isnot(None))
             query = query.filter(avg_scores_subquery.c.avg_shot >= min_shot)
         if max_shot:
+            query = query.filter(avg_scores_subquery.c.avg_shot.isnot(None))
             query = query.filter(avg_scores_subquery.c.avg_shot <= max_shot)
         if min_iq:
+            query = query.filter(avg_scores_subquery.c.avg_iq.isnot(None))
             query = query.filter(avg_scores_subquery.c.avg_iq >= min_iq)
         if max_iq:
+            query = query.filter(avg_scores_subquery.c.avg_iq.isnot(None))
             query = query.filter(avg_scores_subquery.c.avg_iq <= max_iq)
         if min_compete:
+            query = query.filter(avg_scores_subquery.c.avg_compete.isnot(None))
             query = query.filter(avg_scores_subquery.c.avg_compete >= min_compete)
         if max_compete:
+            query = query.filter(avg_scores_subquery.c.avg_compete.isnot(None))
             query = query.filter(avg_scores_subquery.c.avg_compete <= max_compete)
         if min_physical:
+            query = query.filter(avg_scores_subquery.c.avg_physical.isnot(None))
             query = query.filter(avg_scores_subquery.c.avg_physical >= min_physical)
         if max_physical:
+            query = query.filter(avg_scores_subquery.c.avg_physical.isnot(None))
             query = query.filter(avg_scores_subquery.c.avg_physical <= max_physical)
 
     if q:
@@ -177,28 +189,40 @@ def search_players(
 
     if score_filters_active:
         if min_overall:
+            stats_query = stats_query.filter(score_stats_subquery.c.avg_overall.isnot(None))
             stats_query = stats_query.filter(score_stats_subquery.c.avg_overall >= min_overall)
         if max_overall:
+            stats_query = stats_query.filter(score_stats_subquery.c.avg_overall.isnot(None))
             stats_query = stats_query.filter(score_stats_subquery.c.avg_overall <= max_overall)
         if min_skating:
+            stats_query = stats_query.filter(score_stats_subquery.c.avg_skating.isnot(None))
             stats_query = stats_query.filter(score_stats_subquery.c.avg_skating >= min_skating)
         if max_skating:
+            stats_query = stats_query.filter(score_stats_subquery.c.avg_skating.isnot(None))
             stats_query = stats_query.filter(score_stats_subquery.c.avg_skating <= max_skating)
         if min_shot:
+            stats_query = stats_query.filter(score_stats_subquery.c.avg_shot.isnot(None))
             stats_query = stats_query.filter(score_stats_subquery.c.avg_shot >= min_shot)
         if max_shot:
+            stats_query = stats_query.filter(score_stats_subquery.c.avg_shot.isnot(None))
             stats_query = stats_query.filter(score_stats_subquery.c.avg_shot <= max_shot)
         if min_iq:
+            stats_query = stats_query.filter(score_stats_subquery.c.avg_iq.isnot(None))
             stats_query = stats_query.filter(score_stats_subquery.c.avg_iq >= min_iq)
         if max_iq:
+            stats_query = stats_query.filter(score_stats_subquery.c.avg_iq.isnot(None))
             stats_query = stats_query.filter(score_stats_subquery.c.avg_iq <= max_iq)
         if min_compete:
+            stats_query = stats_query.filter(score_stats_subquery.c.avg_compete.isnot(None))
             stats_query = stats_query.filter(score_stats_subquery.c.avg_compete >= min_compete)
         if max_compete:
+            stats_query = stats_query.filter(score_stats_subquery.c.avg_compete.isnot(None))
             stats_query = stats_query.filter(score_stats_subquery.c.avg_compete <= max_compete)
         if min_physical:
+            stats_query = stats_query.filter(score_stats_subquery.c.avg_physical.isnot(None))
             stats_query = stats_query.filter(score_stats_subquery.c.avg_physical >= min_physical)
         if max_physical:
+            stats_query = stats_query.filter(score_stats_subquery.c.avg_physical.isnot(None))
             stats_query = stats_query.filter(score_stats_subquery.c.avg_physical <= max_physical)
 
     if q:

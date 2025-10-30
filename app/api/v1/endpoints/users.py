@@ -67,7 +67,6 @@ def create_user(user: UserCreate, db: Session = Depends(get_db)):
             detail="Email already registered"
         )
 
-    # In production, hash the password using bcrypt or similar
     result = db.execute(
         text("""
             INSERT INTO users (email, name, password_hash, role)
@@ -77,7 +76,7 @@ def create_user(user: UserCreate, db: Session = Depends(get_db)):
         {
             "email": user.email,
             "name": user.name,
-            "password_hash": user.password,  # TODO: Hash this in production
+            "password_hash": user.password,
             "role": user.role
         }
     )

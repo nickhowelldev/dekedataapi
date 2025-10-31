@@ -39,6 +39,9 @@ def search_players(
     skip: int = Query(0, ge=0, description="Number of records to skip"),
     limit: int = Query(100, ge=1, le=1000, description="Max records to return"),
     include_youth_scores: bool = Query(False, description="Include youth scores (ages 13-17)"),
+    youth_score_age: Optional[int] = Query(None, description="Filter by specific youth score age (13-17)"),
+    youth_score_min: Optional[Decimal] = Query(None, description="Minimum overall score for the specified age"),
+    youth_score_max: Optional[Decimal] = Query(None, description="Maximum overall score for the specified age"),
     sort_by: str = Query("name", description="Column to sort by (name, position, birth_year, height, weight, shoots, overall)"),
     sort_direction: str = Query("asc", description="Sort direction (asc or desc)"),
     db: Session = Depends(get_db)
@@ -60,6 +63,8 @@ def search_players(
     - `/search?min_height=180&max_height=190` - Players 180-190cm tall
     - `/search?position=D&shoots=L` - Left-handed defensemen
     - `/search?q=bedard&include_youth_scores=true` - Search with youth scores
+    - `/search?include_youth_scores=true&youth_score_age=14` - Players with age 14 scores
+    - `/search?include_youth_scores=true&youth_score_age=14&youth_score_min=88&youth_score_max=100` - Players with age 14 scores between 88-100
     - `/search?sort_by=birth_year&sort_direction=desc` - Sort by birth year newest first
     - `/search?sort_by=height&sort_direction=desc` - Sort by height tallest first
     - `/search?sort_by=overall&sort_direction=desc` - Sort by overall score (youth average) highest first
@@ -70,6 +75,19 @@ def search_players(
 
     if include_youth_scores:
         query = query.options(selectinload(Player.scores))
+
+    # Apply youth score age filters to filter which players are returned
+    if youth_score_age is not None:
+        score_subquery = (
+            db.query(Score.player_id)
+            .filter(Score.age == youth_score_age)
+        )
+        if youth_score_min is not None:
+            score_subquery = score_subquery.filter(Score.overall >= youth_score_min)
+        if youth_score_max is not None:
+            score_subquery = score_subquery.filter(Score.overall <= youth_score_max)
+        score_subquery = score_subquery.distinct().subquery()
+        query = query.join(score_subquery, Player.id == score_subquery.c.player_id)
 
     score_filters_active = any([
         min_overall, max_overall, min_skating, max_skating,
@@ -186,6 +204,19 @@ def search_players(
         func.min(score_stats_subquery.c.avg_physical).label('min_physical'),
         func.max(score_stats_subquery.c.avg_physical).label('max_physical')
     ).outerjoin(score_stats_subquery, Player.id == score_stats_subquery.c.player_id)
+
+    # Apply youth score age filters to metadata query
+    if youth_score_age is not None:
+        score_subquery_meta = (
+            db.query(Score.player_id)
+            .filter(Score.age == youth_score_age)
+        )
+        if youth_score_min is not None:
+            score_subquery_meta = score_subquery_meta.filter(Score.overall >= youth_score_min)
+        if youth_score_max is not None:
+            score_subquery_meta = score_subquery_meta.filter(Score.overall <= youth_score_max)
+        score_subquery_meta = score_subquery_meta.distinct().subquery()
+        stats_query = stats_query.join(score_subquery_meta, Player.id == score_subquery_meta.c.player_id)
 
     if score_filters_active:
         if min_overall:
@@ -304,12 +335,16 @@ def search_players(
     )
 
 
-@router.get("/", response_model=List[PlayerResponse])
+@router.get("/", response_model=PlayerSearchResponse)
 def get_players(
     skip: int = 0,
     limit: int = 100,
     position: str = None,
     name: str = None,
+    include_youth_scores: bool = Query(False, description="Include youth scores"),
+    youth_score_age: Optional[int] = Query(None, description="Filter by specific youth score age (13-17)"),
+    youth_score_min: Optional[Decimal] = Query(None, description="Minimum overall score for the specified age"),
+    youth_score_max: Optional[Decimal] = Query(None, description="Maximum overall score for the specified age"),
     db: Session = Depends(get_db)
 ):
     """
@@ -321,16 +356,107 @@ def get_players(
     - **limit**: Maximum number of records to return (default: 100)
     - **position**: Filter by position (F, D, G)
     - **name**: Search by name (case-insensitive partial match)
+    - **include_youth_scores**: Include youth scores in the response
+    - **youth_score_age**: Filter players by scores at specific age (requires include_youth_scores=true)
+    - **youth_score_min**: Minimum overall score at the specified age
+    - **youth_score_max**: Maximum overall score at the specified age
+
+    **Examples:**
+    - `/api/players?include_youth_scores=true&youth_score_age=14` - Players with scores at age 14
+    - `/api/players?include_youth_scores=true&youth_score_age=14&youth_score_min=88&youth_score_max=100` - Players with age 14 scores between 88-100
     """
     query = db.query(Player)
+
+    # Load scores if requested
+    if include_youth_scores:
+        query = query.options(selectinload(Player.scores))
+
+    # Apply youth score age filters to filter which players are returned
+    if youth_score_age is not None:
+        # Join with Score table to filter by age
+        score_subquery = (
+            db.query(Score.player_id)
+            .filter(Score.age == youth_score_age)
+        )
+
+        # Apply min/max filters if provided
+        if youth_score_min is not None:
+            score_subquery = score_subquery.filter(Score.overall >= youth_score_min)
+        if youth_score_max is not None:
+            score_subquery = score_subquery.filter(Score.overall <= youth_score_max)
+
+        score_subquery = score_subquery.distinct().subquery()
+        query = query.join(score_subquery, Player.id == score_subquery.c.player_id)
+
+    # Apply basic filters
     if position:
         query = query.filter(Player.position == position)
     if name:
         query = query.filter(Player.name.ilike(f"%{name}%"))
 
+    # Build metadata query (without pagination, to get total count and stats)
+    metadata_query = db.query(Player)
+
+    # Apply the same filters to metadata query
+    if youth_score_age is not None:
+        score_subquery_meta = (
+            db.query(Score.player_id)
+            .filter(Score.age == youth_score_age)
+        )
+        if youth_score_min is not None:
+            score_subquery_meta = score_subquery_meta.filter(Score.overall >= youth_score_min)
+        if youth_score_max is not None:
+            score_subquery_meta = score_subquery_meta.filter(Score.overall <= youth_score_max)
+        score_subquery_meta = score_subquery_meta.distinct().subquery()
+        metadata_query = metadata_query.join(score_subquery_meta, Player.id == score_subquery_meta.c.player_id)
+
+    if position:
+        metadata_query = metadata_query.filter(Player.position == position)
+    if name:
+        metadata_query = metadata_query.filter(Player.name.ilike(f"%{name}%"))
+
+    # Calculate metadata stats
+    stats = metadata_query.with_entities(
+        func.count(Player.id).label('total'),
+        func.min(Player.height).label('min_height'),
+        func.max(Player.height).label('max_height'),
+        func.min(Player.weight).label('min_weight'),
+        func.max(Player.weight).label('max_weight'),
+        func.min(Player.birth_year).label('min_birth_year'),
+        func.max(Player.birth_year).label('max_birth_year')
+    ).first()
+
+    # Get paginated results
     query = query.order_by(Player.name)
     players = query.offset(skip).limit(limit).all()
-    return players
+
+    return PlayerSearchResponse(
+        data=players,
+        metadata=PlayerSearchMetadata(
+            total=stats.total or 0,
+            returned=len(players),
+            skip=skip,
+            limit=limit,
+            min_height=stats.min_height,
+            max_height=stats.max_height,
+            min_weight=stats.min_weight,
+            max_weight=stats.max_weight,
+            min_birth_year=stats.min_birth_year,
+            max_birth_year=stats.max_birth_year,
+            min_overall=None,
+            max_overall=None,
+            min_skating=None,
+            max_skating=None,
+            min_shot=None,
+            max_shot=None,
+            min_iq=None,
+            max_iq=None,
+            min_compete=None,
+            max_compete=None,
+            min_physical=None,
+            max_physical=None
+        )
+    )
 
 
 @router.get("/{player_id}", response_model=PlayerResponse)

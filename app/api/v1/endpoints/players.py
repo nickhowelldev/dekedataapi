@@ -1,14 +1,26 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Query
-from sqlalchemy.orm import Session, selectinload
-from sqlalchemy import func
+from sqlalchemy.orm import Session, selectinload, joinedload
+from sqlalchemy import func, text
 from typing import List, Optional
 from uuid import UUID
 from decimal import Decimal
 from app.db.base import get_db
 from app.schemas.player import PlayerCreate, PlayerUpdate, PlayerResponse
 from app.schemas.player_search import PlayerSearchResponse, PlayerSearchMetadata
+from app.schemas.player_profile import (
+    PlayerSeasonsResponse, PlayerSeasonResponse, SeasonStatsDetail, GoalieSeasonStatsDetail,
+    PlayerYouthScoresResponse, YouthScoreDetail,
+    PlayerDraftResponse, DraftProbabilityDetail,
+    PlayerSeasonProgressResponse, SeasonProgressSnapshot, GoalieSeasonProgressSnapshot,
+    PlayerProfileResponse, PlayerDetails
+)
 from app.models.player import Player
 from app.models.score import Score
+from app.models.player_season import PlayerSeason
+from app.models.season import Season
+from app.models.league import League
+from app.models.team import Team
+from app.models.draft import Draft
 
 router = APIRouter()
 
@@ -521,3 +533,389 @@ def delete_player(player_id: UUID, db: Session = Depends(get_db)):
     db.delete(db_player)
     db.commit()
     return None
+
+
+@router.get("/{player_id}/profile", response_model=PlayerProfileResponse)
+def get_player_profile(
+    player_id: UUID,
+    db: Session = Depends(get_db)
+):
+    """
+    Comprehensive player profile endpoint - returns all player data in one call.
+
+    Steps:
+    1. Fetch player details by ID, raise 404 if not found
+    2. Query all player seasons with eager-loaded relationships (season, league, team, stats)
+    3. Transform seasons into response format
+    4. Query youth development scores (ages 13-17) ordered by age
+    5. Transform scores into response format
+    6. Query draft probability data ordered by probability
+    7. Transform drafts into response format
+    8. If player has seasons, fetch historical snapshots for most recent season:
+       - For goalies: query goalie_season_stats_history
+       - For skaters: query player_season_stats_history
+    9. Return complete profile with details, seasons, stats, snapshots, probabilities
+    """
+    player = db.query(Player).filter(Player.id == player_id).first()
+    if not player:
+        raise HTTPException(status_code=404, detail=f"Player with id {player_id} not found")
+
+    player_seasons = (
+        db.query(PlayerSeason)
+        .options(
+            joinedload(PlayerSeason.season),
+            joinedload(PlayerSeason.league),
+            joinedload(PlayerSeason.team),
+            joinedload(PlayerSeason.player_stats),
+            joinedload(PlayerSeason.goalie_stats)
+        )
+        .filter(PlayerSeason.player_id == player_id)
+        .join(Season)
+        .order_by(Season.start_year.desc(), Season.end_year.desc())
+        .all()
+    )
+
+    seasons_data = [
+        PlayerSeasonResponse(
+            season=ps.season.label if ps.season else "Unknown",
+            league=ps.league.name if ps.league else "Unknown",
+            league_code=ps.league.code if ps.league else "",
+            team=ps.team.name if ps.team else None,
+            team_code=ps.team.code if ps.team else None,
+            split=ps.split,
+            age=ps.age,
+            level=ps.level,
+            competition_strength=ps.competition_strength,
+            stats=SeasonStatsDetail.model_validate(ps.player_stats) if ps.player_stats else None,
+            goalie_stats=GoalieSeasonStatsDetail.model_validate(ps.goalie_stats) if ps.goalie_stats else None
+        )
+        for ps in player_seasons
+    ]
+
+    scores = (
+        db.query(Score)
+        .options(joinedload(Score.season))
+        .filter(Score.player_id == player_id, Score.age.between(13, 17))
+        .order_by(Score.age.asc())
+        .all()
+    )
+
+    youth_scores_data = [
+        YouthScoreDetail(
+            age=score.age,
+            season=score.season.label if score.season else None,
+            overall=score.overall,
+            prospect=score.prospect,
+            skating=score.skating,
+            shot=score.shot,
+            iq=score.iq,
+            compete=score.compete,
+            physical=score.physical,
+            projection_note=score.projection_note
+        )
+        for score in scores
+    ]
+
+    drafts = (
+        db.query(Draft)
+        .options(joinedload(Draft.season))
+        .filter(Draft.player_id == player_id)
+        .order_by(Draft.probability.desc())
+        .all()
+    )
+
+    drafts_data = [
+        DraftProbabilityDetail(
+            draft_league=draft.draft_league,
+            season=draft.season.label if draft.season else None,
+            probability=draft.probability,
+            round_estimate=draft.round_estimate,
+            team_hints=draft.team_hints
+        )
+        for draft in drafts
+    ]
+
+    snapshots = None
+    if player_seasons:
+        most_recent_season = player_seasons[0]
+
+        if player.position == 'G':
+            query = text("""
+                SELECT snapshot_date, gp, gs, w, l, otl, so, ga, sa, sv, toi_min, gaa, sv_pct
+                FROM dekedata.goalie_season_stats_history
+                WHERE player_season_id = :player_season_id
+                ORDER BY snapshot_date ASC
+            """)
+            rows = db.execute(query, {"player_season_id": most_recent_season.id}).fetchall()
+            goalie_snapshots = [
+                GoalieSeasonProgressSnapshot(
+                    date=row[0].isoformat(),
+                    gp=row[1] or 0,
+                    gs=row[2],
+                    w=row[3],
+                    l=row[4],
+                    otl=row[5],
+                    so=row[6],
+                    ga=row[7],
+                    sa=row[8],
+                    sv=row[9],
+                    toi_min=row[10],
+                    gaa=row[11],
+                    sv_pct=row[12]
+                )
+                for row in rows
+            ]
+            snapshots = PlayerSeasonProgressResponse(snapshots=[], goalie_snapshots=goalie_snapshots)
+        else:
+            query = text("""
+                SELECT snapshot_date, gp, g, a, pts, pim, plus_minus, sog, hits, blocks, pp_g, sh_g
+                FROM dekedata.player_season_stats_history
+                WHERE player_season_id = :player_season_id
+                ORDER BY snapshot_date ASC
+            """)
+            rows = db.execute(query, {"player_season_id": most_recent_season.id}).fetchall()
+            skater_snapshots = [
+                SeasonProgressSnapshot(
+                    date=row[0].isoformat(),
+                    gp=row[1] or 0,
+                    g=row[2] or 0,
+                    a=row[3] or 0,
+                    pts=row[4] or 0,
+                    pim=row[5],
+                    plus_minus=row[6],
+                    sog=row[7],
+                    hits=row[8],
+                    blocks=row[9],
+                    pp_g=row[10],
+                    sh_g=row[11]
+                )
+                for row in rows
+            ]
+            snapshots = PlayerSeasonProgressResponse(snapshots=skater_snapshots, goalie_snapshots=[])
+
+    return PlayerProfileResponse(
+        details=PlayerDetails(
+            player_id=str(player.id),
+            name=player.name,
+            position=player.position,
+            birth_year=player.birth_year,
+            shoots=player.shoots,
+            height=player.height,
+            weight=player.weight,
+            photo_url=player.photo_url
+        ),
+        seasons=seasons_data,
+        stats=youth_scores_data,
+        snapshots=snapshots,
+        probabilities=drafts_data
+    )
+
+
+@router.get("/{player_id}/seasons", response_model=PlayerSeasonsResponse)
+def get_player_seasons(
+    player_id: UUID,
+    season_id: Optional[UUID] = Query(None),
+    league_id: Optional[UUID] = Query(None),
+    db: Session = Depends(get_db)
+):
+    """
+    Returns all season-by-season statistics for a player.
+
+    Steps:
+    1. Query player seasons with eager-loaded relationships
+    2. Apply optional filters for season_id and league_id
+    3. Order by most recent season first
+    4. Transform to response format with stats
+    5. Return seasons list
+    """
+    query = (
+        db.query(PlayerSeason)
+        .options(
+            joinedload(PlayerSeason.season),
+            joinedload(PlayerSeason.league),
+            joinedload(PlayerSeason.team),
+            joinedload(PlayerSeason.player_stats),
+            joinedload(PlayerSeason.goalie_stats)
+        )
+        .filter(PlayerSeason.player_id == player_id)
+    )
+
+    if season_id:
+        query = query.filter(PlayerSeason.season_id == season_id)
+    if league_id:
+        query = query.filter(PlayerSeason.league_id == league_id)
+
+    player_seasons = query.join(Season).order_by(Season.start_year.desc(), Season.end_year.desc()).all()
+
+    seasons_data = [
+        PlayerSeasonResponse(
+            season=ps.season.label if ps.season else "Unknown",
+            league=ps.league.name if ps.league else "Unknown",
+            league_code=ps.league.code if ps.league else "",
+            team=ps.team.name if ps.team else None,
+            team_code=ps.team.code if ps.team else None,
+            split=ps.split,
+            age=ps.age,
+            level=ps.level,
+            competition_strength=ps.competition_strength,
+            stats=SeasonStatsDetail.model_validate(ps.player_stats) if ps.player_stats else None,
+            goalie_stats=GoalieSeasonStatsDetail.model_validate(ps.goalie_stats) if ps.goalie_stats else None
+        )
+        for ps in player_seasons
+    ]
+
+    return PlayerSeasonsResponse(seasons=seasons_data)
+
+
+@router.get("/{player_id}/youth-scores", response_model=PlayerYouthScoresResponse)
+def get_player_youth_scores(player_id: UUID, db: Session = Depends(get_db)):
+    """
+    Returns youth development scores for ages 13-17.
+
+    Steps:
+    1. Query scores table filtered by player_id and age range (13-17)
+    2. Eager-load season relationships
+    3. Order by age ascending
+    4. Transform to response format with all score attributes
+    5. Return youth scores list
+    """
+    scores = (
+        db.query(Score)
+        .options(joinedload(Score.season))
+        .filter(Score.player_id == player_id, Score.age.between(13, 17))
+        .order_by(Score.age.asc())
+        .all()
+    )
+
+    youth_scores_data = [
+        YouthScoreDetail(
+            age=score.age,
+            season=score.season.label if score.season else None,
+            overall=score.overall,
+            prospect=score.prospect,
+            skating=score.skating,
+            shot=score.shot,
+            iq=score.iq,
+            compete=score.compete,
+            physical=score.physical,
+            projection_note=score.projection_note
+        )
+        for score in scores
+    ]
+
+    return PlayerYouthScoresResponse(youth_scores=youth_scores_data)
+
+
+@router.get("/{player_id}/probabilities", response_model=PlayerDraftResponse)
+def get_player_probabilities(player_id: UUID, db: Session = Depends(get_db)):
+    """
+    Returns draft probability data for a player.
+
+    Steps:
+    1. Query draft table filtered by player_id
+    2. Eager-load season relationships
+    3. Order by probability descending (highest probability first)
+    4. Transform to response format with league, probability, round, team hints
+    5. Return draft probabilities list
+    """
+    drafts = (
+        db.query(Draft)
+        .options(joinedload(Draft.season))
+        .filter(Draft.player_id == player_id)
+        .order_by(Draft.probability.desc())
+        .all()
+    )
+
+    drafts_data = [
+        DraftProbabilityDetail(
+            draft_league=draft.draft_league,
+            season=draft.season.label if draft.season else None,
+            probability=draft.probability,
+            round_estimate=draft.round_estimate,
+            team_hints=draft.team_hints
+        )
+        for draft in drafts
+    ]
+
+    return PlayerDraftResponse(drafts=drafts_data)
+
+
+@router.get("/{player_id}/season-progress", response_model=PlayerSeasonProgressResponse)
+def get_player_season_progress(
+    player_id: UUID,
+    player_season_id: UUID = Query(...),
+    db: Session = Depends(get_db)
+):
+    """
+    Returns daily snapshots of cumulative season stats for a specific player season.
+
+    Steps:
+    1. Validate player exists, raise 404 if not found
+    2. Validate player_season exists, raise 404 if not found
+    3. Check if player is goalie (position == 'G')
+    4. If goalie: query goalie_season_stats_history table
+    5. If skater: query player_season_stats_history table
+    6. Transform raw SQL rows to snapshot objects
+    7. Return snapshots ordered chronologically
+    """
+    player = db.query(Player).filter(Player.id == player_id).first()
+    if not player:
+        raise HTTPException(status_code=404, detail=f"Player with id {player_id} not found")
+
+    player_season = db.query(PlayerSeason).filter(PlayerSeason.id == player_season_id).first()
+    if not player_season:
+        raise HTTPException(status_code=404, detail=f"Player season with id {player_season_id} not found")
+
+    if player.position == 'G':
+        query = text("""
+            SELECT snapshot_date, gp, gs, w, l, otl, so, ga, sa, sv, toi_min, gaa, sv_pct
+            FROM dekedata.goalie_season_stats_history
+            WHERE player_season_id = :player_season_id
+            ORDER BY snapshot_date ASC
+        """)
+        rows = db.execute(query, {"player_season_id": player_season_id}).fetchall()
+        goalie_snapshots = [
+            GoalieSeasonProgressSnapshot(
+                date=row[0].isoformat(),
+                gp=row[1] or 0,
+                gs=row[2],
+                w=row[3],
+                l=row[4],
+                otl=row[5],
+                so=row[6],
+                ga=row[7],
+                sa=row[8],
+                sv=row[9],
+                toi_min=row[10],
+                gaa=row[11],
+                sv_pct=row[12]
+            )
+            for row in rows
+        ]
+        return PlayerSeasonProgressResponse(snapshots=[], goalie_snapshots=goalie_snapshots)
+    else:
+        query = text("""
+            SELECT snapshot_date, gp, g, a, pts, pim, plus_minus, sog, hits, blocks, pp_g, sh_g
+            FROM dekedata.player_season_stats_history
+            WHERE player_season_id = :player_season_id
+            ORDER BY snapshot_date ASC
+        """)
+        rows = db.execute(query, {"player_season_id": player_season_id}).fetchall()
+        skater_snapshots = [
+            SeasonProgressSnapshot(
+                date=row[0].isoformat(),
+                gp=row[1] or 0,
+                g=row[2] or 0,
+                a=row[3] or 0,
+                pts=row[4] or 0,
+                pim=row[5],
+                plus_minus=row[6],
+                sog=row[7],
+                hits=row[8],
+                blocks=row[9],
+                pp_g=row[10],
+                sh_g=row[11]
+            )
+            for row in rows
+        ]
+        return PlayerSeasonProgressResponse(snapshots=skater_snapshots, goalie_snapshots=[])

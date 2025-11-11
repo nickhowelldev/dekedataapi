@@ -102,6 +102,36 @@ The DekeData schema provides comprehensive hockey data management with 9 entity 
 - Multi-league draft probability tracking
 - Height stored in centimeters, weight in kilograms (frontend handles unit conversion)
 
+#### Player Profile Endpoints
+
+Comprehensive endpoints for retrieving player profile data. All endpoints return data organized for frontend consumption.
+
+**Comprehensive Endpoint** (recommended):
+- `GET /api/v1/dekedata/players/{player_id}/profile` - Get all player data in one call
+  - Returns: player details, all seasons, youth scores (ages 13-17), draft probabilities, and historical snapshots for most recent season
+  - No query parameters needed - automatically fetches most recent season progress
+
+**Individual Endpoints** (for granular data access):
+- `GET /api/v1/dekedata/players/{player_id}/seasons` - Season-by-season statistics
+  - Query params: `season_id` (optional), `league_id` (optional)
+  - Returns: List of seasons with team, league, and stats (skater or goalie)
+
+- `GET /api/v1/dekedata/players/{player_id}/youth-scores` - Youth development scores
+  - Returns: Scouting scores for ages 13-17 (overall, skating, shot, IQ, compete, physical)
+
+- `GET /api/v1/dekedata/players/{player_id}/probabilities` - Draft probability data
+  - Returns: Draft league, probability percentage, round estimate, team hints
+
+- `GET /api/v1/dekedata/players/{player_id}/season-progress` - Historical stat tracking
+  - Query params: `player_season_id` (required)
+  - Returns: Daily snapshots of cumulative season stats (for charting season progression)
+
+**Implementation Notes:**
+- All endpoints use eager loading to prevent N+1 queries
+- Position-aware: automatically returns skater or goalie stats based on player position
+- Historical tracking requires `player_season_stats_history` and `goalie_season_stats_history` tables
+- Date snapshots stored as ISO format strings for frontend compatibility
+
 ## Database Migrations
 
 This project uses Alembic for database migrations (similar to Drizzle in Next.js).

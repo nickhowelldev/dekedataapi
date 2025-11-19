@@ -1,7 +1,7 @@
 from pydantic import BaseModel, ConfigDict
 from typing import List, Optional
 from decimal import Decimal
-from app.schemas.player import PlayerResponse
+from app.schemas.player import PlayerResponse, MinimalPlayerResponse
 
 
 class PlayerSearchMetadata(BaseModel):
@@ -62,6 +62,45 @@ class PlayerSearchResponse(BaseModel):
                     "max_weight": 105.2,
                     "min_birth_year": 2003,
                     "max_birth_year": 2007
+                }
+            }
+        }
+    )
+
+
+class MinimalSearchMetadata(BaseModel):
+    """Minimal metadata for lightweight search responses."""
+    total: int
+    returned: int
+    skip: int
+    limit: int
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class MinimalPlayersResponse(BaseModel):
+    """Minimal player search response - optimized for navigation/autocomplete."""
+    data: List[MinimalPlayerResponse]
+    metadata: MinimalSearchMetadata
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "data": [
+                    {
+                        "id": "123e4567-e89b-12d3-a456-426614174000",
+                        "name": "Connor Bedard",
+                        "position": "F",
+                        "birth_year": 2005,
+                        "region": "North Vancouver, BC",
+                        "photo_url": "https://example.com/bedard.jpg"
+                    }
+                ],
+                "metadata": {
+                    "total": 1,
+                    "returned": 1,
+                    "skip": 0,
+                    "limit": 50
                 }
             }
         }

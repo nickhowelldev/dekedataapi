@@ -61,3 +61,15 @@ class PlayerResponse(PlayerBase):
     youth_scores: Optional[List] = None
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class MinimalPlayerResponse(BaseModel):
+    """Minimal player response for search results - optimized for navigation."""
+    id: UUID
+    name: str
+    position: str
+    birth_year: Optional[int] = None
+    region: Optional[str] = None
+    photo_url: Optional[str] = None
+
+    model_config = ConfigDict(from_attributes=True)

@@ -1,4 +1,4 @@
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, field_serializer
 from typing import Optional, List
 from uuid import UUID
 from datetime import datetime
@@ -61,6 +61,11 @@ class PlayerResponse(PlayerBase):
     youth_scores: Optional[List] = None
 
     model_config = ConfigDict(from_attributes=True)
+
+    @field_serializer('birth_year')
+    def serialize_birth_year(self, birth_year: Optional[int]) -> Optional[int]:
+        """Convert birth_year of 0 to None."""
+        return None if birth_year == 0 else birth_year
 
 
 class MinimalPlayerResponse(BaseModel):

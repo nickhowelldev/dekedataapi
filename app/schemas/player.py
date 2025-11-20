@@ -71,5 +71,7 @@ class MinimalPlayerResponse(BaseModel):
     birth_year: Optional[int] = None
     region: Optional[str] = None
     photo_url: Optional[str] = None
+    current_team: Optional[str] = None
+    current_league: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)

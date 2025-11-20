@@ -31,6 +31,11 @@ class Player(Base):
     drafts = relationship("Draft", back_populates="player", cascade="all, delete-orphan")
 
     @property
+    def birth_year_display(self):
+        """Returns birth_year as None if it's 0, otherwise returns the actual value."""
+        return None if self.birth_year == 0 else self.birth_year
+
+    @property
     def youth_scores(self):
         from app.schemas.score import ScoreResponse
         filtered_scores = [s for s in self.scores if s.age and 13 <= s.age <= 17]

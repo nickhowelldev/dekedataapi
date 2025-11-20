@@ -184,46 +184,61 @@ def fuzzy_search_players(
     result = db.execute(text("""
         WITH player_matches AS (
             SELECT
-                id,
-                name,
-                position,
-                birth_year,
-                region,
-                photo_url,
-                similarity(LOWER(name), :normalized_query) as name_similarity,
-                similarity(LOWER(REGEXP_REPLACE(name, '[^a-zA-Z0-9 ]', '', 'g')), :normalized_query) as normalized_similarity,
+                p.id,
+                p.name,
+                p.position,
+                p.birth_year,
+                p.region,
+                p.photo_url,
+                similarity(LOWER(p.name), :normalized_query) as name_similarity,
+                similarity(LOWER(REGEXP_REPLACE(p.name, '[^a-zA-Z0-9 ]', '', 'g')), :normalized_query) as normalized_similarity,
                 CASE
-                    WHEN LOWER(name) = :normalized_query THEN 100.0
-                    WHEN LOWER(name) LIKE :query_start THEN 50.0
-                    WHEN LOWER(REGEXP_REPLACE(name, '[^a-zA-Z0-9 ]', '', 'g')) = :normalized_query THEN 90.0
-                    WHEN LOWER(REGEXP_REPLACE(name, '[^a-zA-Z0-9 ]', '', 'g')) LIKE :query_start THEN 45.0
+                    WHEN LOWER(p.name) = :normalized_query THEN 100.0
+                    WHEN LOWER(p.name) LIKE :query_start THEN 50.0
+                    WHEN LOWER(REGEXP_REPLACE(p.name, '[^a-zA-Z0-9 ]', '', 'g')) = :normalized_query THEN 90.0
+                    WHEN LOWER(REGEXP_REPLACE(p.name, '[^a-zA-Z0-9 ]', '', 'g')) LIKE :query_start THEN 45.0
                     ELSE 0.0
                 END as match_bonus,
                 CASE
-                    WHEN LOWER(name) LIKE :query_contains THEN true
-                    WHEN LOWER(REGEXP_REPLACE(name, '[^a-zA-Z0-9 ]', '', 'g')) LIKE :query_contains THEN true
+                    WHEN LOWER(p.name) LIKE :query_contains THEN true
+                    WHEN LOWER(REGEXP_REPLACE(p.name, '[^a-zA-Z0-9 ]', '', 'g')) LIKE :query_contains THEN true
                     ELSE false
                 END as contains_match,
                 COUNT(*) OVER() as total_count
-            FROM dekedata.players
+            FROM dekedata.players p
             WHERE
-                (LOWER(name) % :normalized_query
-                OR LOWER(REGEXP_REPLACE(name, '[^a-zA-Z0-9 ]', '', 'g')) % :normalized_query)
-                OR LOWER(name) LIKE :query_contains
-                OR LOWER(REGEXP_REPLACE(name, '[^a-zA-Z0-9 ]', '', 'g')) LIKE :query_contains
+                (LOWER(p.name) % :normalized_query
+                OR LOWER(REGEXP_REPLACE(p.name, '[^a-zA-Z0-9 ]', '', 'g')) % :normalized_query)
+                OR LOWER(p.name) LIKE :query_contains
+                OR LOWER(REGEXP_REPLACE(p.name, '[^a-zA-Z0-9 ]', '', 'g')) LIKE :query_contains
+        ),
+        latest_seasons AS (
+            SELECT DISTINCT ON (ps.player_id)
+                ps.player_id,
+                t.name as team_name,
+                l.code as league_code
+            FROM dekedata.player_seasons ps
+            JOIN dekedata.seasons s ON ps.season_id = s.id
+            LEFT JOIN dekedata.teams t ON ps.team_id = t.id
+            LEFT JOIN dekedata.leagues l ON ps.league_id = l.id
+            WHERE ps.split = 'Regular'
+            ORDER BY ps.player_id, s.start_year DESC, s.end_year DESC
         )
         SELECT
-            id,
-            name,
-            position,
-            birth_year,
-            region,
-            photo_url,
-            total_count,
-            (GREATEST(name_similarity, normalized_similarity) * 100 + match_bonus) as relevance_score
-        FROM player_matches
-        WHERE (GREATEST(name_similarity, normalized_similarity) >= :threshold OR contains_match)
-        ORDER BY relevance_score DESC, name ASC
+            pm.id,
+            pm.name,
+            pm.position,
+            NULLIF(pm.birth_year, 0) as birth_year,
+            pm.region,
+            pm.photo_url,
+            ls.team_name as current_team,
+            ls.league_code as current_league,
+            pm.total_count,
+            (GREATEST(pm.name_similarity, pm.normalized_similarity) * 100 + pm.match_bonus) as relevance_score
+        FROM player_matches pm
+        LEFT JOIN latest_seasons ls ON pm.id = ls.player_id
+        WHERE (GREATEST(pm.name_similarity, pm.normalized_similarity) >= :threshold OR pm.contains_match)
+        ORDER BY relevance_score DESC, pm.name ASC
         OFFSET :skip
         LIMIT :limit
     """), query_params).fetchall()
@@ -236,7 +251,9 @@ def fuzzy_search_players(
             position=row.position,
             birth_year=row.birth_year,
             region=row.region,
-            photo_url=row.photo_url
+            photo_url=row.photo_url,
+            current_team=row.current_team,
+            current_league=row.current_league
         )
         for row in result
     ]
@@ -928,7 +945,7 @@ def get_player_profile(
             player_id=str(player.id),
             name=player.name,
             position=player.position,
-            birth_year=player.birth_year,
+            birth_year=player.birth_year_display,
             shoots=player.shoots,
             height=player.height,
             weight=player.weight,

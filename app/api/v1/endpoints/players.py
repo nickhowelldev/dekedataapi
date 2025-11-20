@@ -26,6 +26,107 @@ from app.models.draft import Draft
 router = APIRouter()
 
 
+def calculate_overall_stats(seasons_data: list) -> tuple:
+    """
+    Calculate career totals from a list of PlayerSeasonResponse objects.
+    Returns (overall_stats, overall_goalie_stats)
+    """
+    # Check if player is a goalie by looking at first season with stats
+    is_goalie = any(s.goalie_stats for s in seasons_data)
+
+    if is_goalie:
+        # Calculate goalie totals
+        total_gp = 0
+        total_gs = 0
+        total_w = 0
+        total_l = 0
+        total_otl = 0
+        total_so = 0
+        total_ga = 0
+        total_sa = 0
+        total_sv = 0
+        total_toi_min = 0
+
+        for season in seasons_data:
+            if season.goalie_stats:
+                total_gp += season.goalie_stats.gp or 0
+                total_gs += season.goalie_stats.gs or 0
+                total_w += season.goalie_stats.w or 0
+                total_l += season.goalie_stats.l or 0
+                total_otl += season.goalie_stats.otl or 0
+                total_so += season.goalie_stats.so or 0
+                total_ga += season.goalie_stats.ga or 0
+                total_sa += season.goalie_stats.sa or 0
+                total_sv += season.goalie_stats.sv or 0
+                total_toi_min += season.goalie_stats.toi_min or 0
+
+        # Calculate GAA and SV%
+        gaa = None
+        sv_pct = None
+        if total_toi_min > 0:
+            gaa = Decimal(total_ga * 60) / Decimal(total_toi_min)
+        if total_sa > 0:
+            sv_pct = Decimal(total_sv) / Decimal(total_sa)
+
+        overall_goalie = GoalieSeasonStatsDetail(
+            gp=total_gp,
+            gs=total_gs if total_gs > 0 else None,
+            w=total_w if total_w > 0 else None,
+            l=total_l if total_l > 0 else None,
+            otl=total_otl if total_otl > 0 else None,
+            so=total_so if total_so > 0 else None,
+            ga=total_ga if total_ga > 0 else None,
+            sa=total_sa if total_sa > 0 else None,
+            sv=total_sv if total_sv > 0 else None,
+            toi_min=total_toi_min if total_toi_min > 0 else None,
+            gaa=gaa,
+            sv_pct=sv_pct
+        )
+        return None, overall_goalie
+    else:
+        # Calculate skater totals
+        total_gp = 0
+        total_g = 0
+        total_a = 0
+        total_pts = 0
+        total_pim = 0
+        total_plus_minus = 0
+        total_sog = 0
+        total_hits = 0
+        total_blocks = 0
+        total_pp_g = 0
+        total_sh_g = 0
+
+        for season in seasons_data:
+            if season.stats:
+                total_gp += season.stats.gp or 0
+                total_g += season.stats.g or 0
+                total_a += season.stats.a or 0
+                total_pts += season.stats.pts or 0
+                total_pim += season.stats.pim or 0
+                total_plus_minus += season.stats.plus_minus or 0
+                total_sog += season.stats.sog or 0
+                total_hits += season.stats.hits or 0
+                total_blocks += season.stats.blocks or 0
+                total_pp_g += season.stats.pp_g or 0
+                total_sh_g += season.stats.sh_g or 0
+
+        overall_stats = SeasonStatsDetail(
+            gp=total_gp,
+            g=total_g,
+            a=total_a,
+            pts=total_pts,
+            pim=total_pim if total_pim > 0 else None,
+            plus_minus=total_plus_minus if total_plus_minus != 0 else None,
+            sog=total_sog if total_sog > 0 else None,
+            hits=total_hits if total_hits > 0 else None,
+            blocks=total_blocks if total_blocks > 0 else None,
+            pp_g=total_pp_g if total_pp_g > 0 else None,
+            sh_g=total_sh_g if total_sh_g > 0 else None
+        )
+        return overall_stats, None
+
+
 @router.get("/fuzzy-search", response_model=MinimalPlayersResponse)
 def fuzzy_search_players(
     q: str = Query(..., min_length=2, description="Search query for player name (minimum 2 characters)"),
@@ -819,6 +920,9 @@ def get_player_profile(
             ]
             snapshots = PlayerSeasonProgressResponse(snapshots=skater_snapshots, goalie_snapshots=[])
 
+    # Calculate overall career totals
+    overall_stats, overall_goalie_stats = calculate_overall_stats(seasons_data)
+
     return PlayerProfileResponse(
         details=PlayerDetails(
             player_id=str(player.id),
@@ -831,7 +935,9 @@ def get_player_profile(
             photo_url=player.photo_url
         ),
         seasons=seasons_data,
-        stats=youth_scores_data,
+        stats=overall_stats,
+        goalie_stats=overall_goalie_stats,
+        youth_scores=youth_scores_data,
         snapshots=snapshots,
         probabilities=drafts_data
     )
@@ -890,7 +996,14 @@ def get_player_seasons(
         for ps in player_seasons
     ]
 
-    return PlayerSeasonsResponse(seasons=seasons_data)
+    # Calculate overall career totals
+    overall_stats, overall_goalie_stats = calculate_overall_stats(seasons_data)
+
+    return PlayerSeasonsResponse(
+        seasons=seasons_data,
+        stats=overall_stats,
+        goalie_stats=overall_goalie_stats
+    )
 
 
 @router.get("/{player_id}/youth-scores", response_model=PlayerYouthScoresResponse)

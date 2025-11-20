@@ -51,6 +51,8 @@ class PlayerSeasonResponse(BaseModel):
 
 class PlayerSeasonsResponse(BaseModel):
     seasons: List[PlayerSeasonResponse]
+    stats: Optional[SeasonStatsDetail] = None
+    goalie_stats: Optional[GoalieSeasonStatsDetail] = None
 
 
 class YouthScoreDetail(BaseModel):
@@ -135,6 +137,8 @@ class PlayerDetails(BaseModel):
 class PlayerProfileResponse(BaseModel):
     details: PlayerDetails
     seasons: List[PlayerSeasonResponse] = []
-    stats: List[YouthScoreDetail] = []
+    stats: Optional[SeasonStatsDetail] = None
+    goalie_stats: Optional[GoalieSeasonStatsDetail] = None
+    youth_scores: List[YouthScoreDetail] = []
     snapshots: Optional[PlayerSeasonProgressResponse] = None
     probabilities: List[DraftProbabilityDetail] = []

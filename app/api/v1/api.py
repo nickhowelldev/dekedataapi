@@ -10,7 +10,8 @@ from app.api.v1.endpoints import (
     player_stats,
     goalie_stats,
     scores,
-    drafts
+    drafts,
+    lists
 )
 
 api_router = APIRouter()
@@ -21,6 +22,7 @@ api_router.include_router(leagues.router, prefix="/leagues", tags=["leagues"])
 
 # DekeData schema routes
 api_router.include_router(dekedata_leagues.router, prefix="/dekedata/leagues", tags=["dekedata-leagues"])
+api_router.include_router(lists.router, prefix="/dekedata/lists", tags=["dekedata-lists"])
 api_router.include_router(teams.router, prefix="/dekedata/teams", tags=["dekedata-teams"])
 api_router.include_router(seasons.router, prefix="/dekedata/seasons", tags=["dekedata-seasons"])
 api_router.include_router(players.router, prefix="/dekedata/players", tags=["dekedata-players"])

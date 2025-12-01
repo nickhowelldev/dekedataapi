@@ -9,6 +9,8 @@ class PlayerBase(BaseModel):
     name: str
     position: str
     birth_year: Optional[int] = None
+    dob: Optional[str] = None
+    player_id: Optional[str] = None
     shoots: Optional[str] = None
     region: Optional[str] = None
     height: Optional[Decimal] = None
@@ -37,6 +39,8 @@ class PlayerUpdate(BaseModel):
     name: Optional[str] = None
     position: Optional[str] = None
     birth_year: Optional[int] = None
+    dob: Optional[str] = None
+    player_id: Optional[str] = None
     shoots: Optional[str] = None
     region: Optional[str] = None
     height: Optional[Decimal] = None
@@ -74,6 +78,8 @@ class MinimalPlayerResponse(BaseModel):
     name: str
     position: str
     birth_year: Optional[int] = None
+    dob: Optional[str] = None
+    player_id: Optional[str] = None
     region: Optional[str] = None
     photo_url: Optional[str] = None
     current_team: Optional[str] = None

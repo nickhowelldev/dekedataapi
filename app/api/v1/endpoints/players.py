@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session, selectinload, joinedload
-from sqlalchemy import func, text
+from sqlalchemy import func, text, Integer
 from typing import Optional
 from uuid import UUID
 from decimal import Decimal
@@ -410,9 +410,9 @@ def search_players(
     if position:
         query = query.filter(Player.position == position.upper())
     if birth_year_min:
-        query = query.filter(Player.birth_year >= birth_year_min)
+        query = query.filter(func.cast(func.substring(Player.dob, 1, 4), Integer) >= birth_year_min)
     if birth_year_max:
-        query = query.filter(Player.birth_year <= birth_year_max)
+        query = query.filter(func.cast(func.substring(Player.dob, 1, 4), Integer) <= birth_year_max)
     if shoots:
         query = query.filter(Player.shoots == shoots.upper())
     if min_height:
@@ -445,8 +445,8 @@ def search_players(
         func.max(Player.height).label('max_height'),
         func.min(Player.weight).label('min_weight'),
         func.max(Player.weight).label('max_weight'),
-        func.min(Player.birth_year).label('min_birth_year'),
-        func.max(Player.birth_year).label('max_birth_year'),
+        func.min(func.cast(func.substring(Player.dob, 1, 4), Integer)).label('min_birth_year'),
+        func.max(func.cast(func.substring(Player.dob, 1, 4), Integer)).label('max_birth_year'),
         func.min(score_stats_subquery.c.avg_overall).label('min_overall'),
         func.max(score_stats_subquery.c.avg_overall).label('max_overall'),
         func.min(score_stats_subquery.c.avg_skating).label('min_skating'),
@@ -517,9 +517,9 @@ def search_players(
     if position:
         stats_query = stats_query.filter(Player.position == position.upper())
     if birth_year_min:
-        stats_query = stats_query.filter(Player.birth_year >= birth_year_min)
+        stats_query = stats_query.filter(func.cast(func.substring(Player.dob, 1, 4), Integer) >= birth_year_min)
     if birth_year_max:
-        stats_query = stats_query.filter(Player.birth_year <= birth_year_max)
+        stats_query = stats_query.filter(func.cast(func.substring(Player.dob, 1, 4), Integer) <= birth_year_max)
     if shoots:
         stats_query = stats_query.filter(Player.shoots == shoots.upper())
     if min_height:

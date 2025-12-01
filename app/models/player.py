@@ -17,7 +17,8 @@ class Player(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     name = Column(Text, nullable=False)
     position = Column(CHAR(1), nullable=False)
-    birth_year = Column(Integer)
+    dob = Column(Text)
+    player_id = Column(Text)
     shoots = Column(CHAR(1))
     region = Column(Text)
     height = Column(DECIMAL(5, 2))
@@ -31,9 +32,14 @@ class Player(Base):
     drafts = relationship("Draft", back_populates="player", cascade="all, delete-orphan")
 
     @property
-    def birth_year_display(self):
-        """Returns birth_year as None if it's 0, otherwise returns the actual value."""
-        return None if self.birth_year == 0 else self.birth_year
+    def birth_year(self):
+        """Extract birth year from dob for backward compatibility."""
+        if not self.dob:
+            return None
+        try:
+            return int(self.dob.split('-')[0])
+        except (ValueError, IndexError):
+            return None
 
     @property
     def youth_scores(self):

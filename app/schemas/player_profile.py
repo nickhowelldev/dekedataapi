@@ -128,6 +128,7 @@ class PlayerDetails(BaseModel):
     name: str
     position: str
     birth_year: Optional[int] = None
+    dob: Optional[str] = None
     shoots: Optional[str] = None
     height: Optional[Decimal] = None
     weight: Optional[Decimal] = None
